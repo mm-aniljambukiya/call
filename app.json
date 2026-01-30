@@ -1,0 +1,27 @@
+{
+  "expo": {
+    "name": "LiveKit Audio",
+    "slug": "livekit-audio-wrapper",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#1a1a2e"
+    },
+    "android": {
+      "package": "com.finerr.livekitaudio",
+      "adaptiveIcon": {
+        "backgroundColor": "#1a1a2e"
+      }
+    },
+    "ios": {
+      "bundleIdentifier": "com.finerr.livekitaudio"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "f3bbe8de-e176-4e75-bc24-3469e28a09f2"
+      }
+    }
+  }
+}
