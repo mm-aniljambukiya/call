@@ -1,0 +1,1196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LiveKit Audio Streamer</title>
+    <script>
+        // Load LiveKit client library
+        (function() {
+            const script = document.createElement('script');
+            script.src = 'https://unpkg.com/livekit-client@latest/dist/livekit-client.umd.js';
+            script.onload = function() {
+                console.log('LiveKit script loaded. Checking globals...');
+                console.log('window.LiveKit:', typeof window.LiveKit);
+                console.log('window.LiveKitClient:', typeof window.LiveKitClient);
+                console.log('window.LivekitClient:', typeof window.LivekitClient);
+                console.log('window.livekit:', typeof window.livekit);
+                // Also check all LiveKit-related globals
+                const livekitGlobals = Object.keys(window).filter(k => k.toLowerCase().includes('livekit'));
+                console.log('All LiveKit-related globals:', livekitGlobals);
+                // Trigger app initialization
+                if (typeof initApp === 'function') {
+                    setTimeout(initApp, 100);
+                }
+            };
+            script.onerror = function() {
+                console.error('Failed to load LiveKit from unpkg, trying jsDelivr...');
+                const script2 = document.createElement('script');
+                script2.src = 'https://cdn.jsdelivr.net/npm/livekit-client@latest/dist/livekit-client.umd.js';
+                script2.onload = function() {
+                    console.log('LiveKit loaded from jsDelivr. Checking globals...');
+                    console.log('window.LiveKit:', typeof window.LiveKit);
+                    console.log('window.LiveKitClient:', typeof window.LiveKitClient);
+                    console.log('window.LivekitClient:', typeof window.LivekitClient);
+                    console.log('window.livekit:', typeof window.livekit);
+                    const livekitGlobals = Object.keys(window).filter(k => k.toLowerCase().includes('livekit'));
+                    console.log('All LiveKit-related globals:', livekitGlobals);
+                    if (typeof initApp === 'function') {
+                        setTimeout(initApp, 100);
+                    }
+                };
+                script2.onerror = function() {
+                    console.error('Failed to load LiveKit from both CDNs');
+                };
+                document.head.appendChild(script2);
+            };
+            document.head.appendChild(script);
+        })();
+    </script>
+    <script>
+        // Load jsrsasign library asynchronously with multiple CDN fallbacks
+        (function() {
+            const cdnSources = [
+                'https://cdn.jsdelivr.net/npm/jsrsasign@11.1.0/lib/jsrsasign.js',
+                'https://unpkg.com/jsrsasign@11.1.0/lib/jsrsasign.js',
+                'https://cdnjs.cloudflare.com/ajax/libs/jsrsasign/11.1.0/jsrsasign-all-min.js'
+            ];
+            const cdnNames = ['jsDelivr', 'unpkg', 'cdnjs'];
+            
+            function tryLoadScript(index) {
+                if (index >= cdnSources.length) {
+                    console.error('Failed to load jsrsasign from all CDNs');
+                    // showError might not be defined yet, so use alert as fallback
+                    if (typeof showError === 'function') {
+                        showError('Failed to load jsrsasign library from all CDNs. Please check your internet connection and refresh the page.');
+                    } else {
+                        alert('Failed to load jsrsasign library from all CDNs. Please check your internet connection and refresh the page.');
+                    }
+                    return;
+                }
+                
+                const script = document.createElement('script');
+                script.src = cdnSources[index];
+                script.onload = function() {
+                    console.log(`jsrsasign library loaded from ${cdnNames[index]}. KJUR available:`, typeof KJUR !== 'undefined');
+                    if (typeof KJUR === 'undefined') {
+                        console.warn('KJUR is still undefined after loading. Trying next CDN...');
+                        tryLoadScript(index + 1);
+                    }
+                };
+                script.onerror = function() {
+                    console.error(`Failed to load jsrsasign from ${cdnNames[index]}, trying next CDN...`);
+                    tryLoadScript(index + 1);
+                };
+                document.head.appendChild(script);
+            }
+            
+            // Start loading from first CDN
+            tryLoadScript(0);
+        })();
+    </script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 40px;
+            max-width: 600px;
+            width: 100%;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 30px;
+            text-align: center;
+            font-size: 28px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #555;
+            font-weight: 500;
+        }
+
+        input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+
+        input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 30px;
+        }
+
+        button {
+            flex: 1;
+            padding: 14px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-danger {
+            background: #e74c3c;
+            color: white;
+        }
+
+        .btn-danger:hover:not(:disabled) {
+            background: #c0392b;
+        }
+
+        .btn-secondary {
+            background: #95a5a6;
+            color: white;
+        }
+
+        .btn-secondary:hover:not(:disabled) {
+            background: #7f8c8d;
+        }
+
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .status {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 8px;
+            font-weight: 500;
+        }
+
+        .status.connected {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .status.disconnected {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .status.connecting {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+
+        .audio-meters {
+            margin-top: 30px;
+        }
+
+        .meter-section {
+            margin-bottom: 25px;
+        }
+
+        .meter-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: #555;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+
+        .status-indicator.live {
+            background: #27ae60;
+            box-shadow: 0 0 8px #27ae60;
+        }
+
+        .status-indicator.muted {
+            background: #95a5a6;
+        }
+
+        .meter-bar-container {
+            background: #e0e0e0;
+            border-radius: 10px;
+            height: 30px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .meter-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #27ae60 0%, #f39c12 50%, #e74c3c 100%);
+            border-radius: 10px;
+            transition: width 0.1s ease-out;
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            padding-right: 10px;
+            color: white;
+            font-weight: 600;
+            font-size: 12px;
+        }
+
+        .meter-value {
+            margin-top: 5px;
+            font-size: 12px;
+            color: #777;
+        }
+
+        .participants {
+            margin-top: 30px;
+        }
+
+        .participant-item {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            border-left: 4px solid #667eea;
+        }
+
+        .participant-name {
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 8px;
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        .btn-toggle {
+            flex: 1;
+        }
+
+        .btn-toggle.active {
+            background: #27ae60;
+        }
+
+        .btn-toggle.active.muted {
+            background: #e74c3c;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+            border: 1px solid #f5c6cb;
+        }
+
+        .info {
+            background: #d1ecf1;
+            color: #0c5460;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+            border: 1px solid #bee5eb;
+            font-size: 14px;
+        }
+
+        .info code {
+            background: rgba(0, 0, 0, 0.1);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎤 LiveKit Audio Streamer</h1>
+        
+        <!-- Login Form -->
+        <div id="loginForm">
+            <h2 style="margin-bottom: 20px; color: #333; text-align: center;">Login</h2>
+            <div class="form-group">
+                <label for="username">Username</label>
+                <input type="text" id="username" placeholder="Enter username" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" placeholder="Enter password" required>
+            </div>
+            
+            <div class="button-group">
+                <button class="btn-primary" id="loginBtn" onclick="handleLogin()">Login</button>
+            </div>
+            
+            <div class="info" style="margin-top: 20px;">
+                <strong>Demo Credentials:</strong><br>
+                Admin: <code>admin</code> / <code>admin123</code><br>
+                User: <code>user</code> / <code>user123</code>
+            </div>
+        </div>
+        
+        <div id="connectionForm" class="hidden">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px;">
+                <div>
+                    <strong>Logged in as:</strong> <span id="currentUserDisplay"></span>
+                    <span id="userRoleBadge" style="margin-left: 10px; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 600;"></span>
+                    <div id="roomDisplay" style="margin-top: 6px; font-size: 13px; color: #555; font-weight: 500;"></div>
+                </div>
+                <button class="btn-secondary" onclick="handleLogout()" style="padding: 8px 16px; font-size: 14px;">Logout</button>
+            </div>
+            
+            <div class="form-group">
+                <label for="livekitUrl">LiveKit Server URL</label>
+                <input type="text" id="livekitUrl" placeholder="wss://your-livekit-server.com" value="wss://demo-kbdgxert.livekit.cloud" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="apiKey">LiveKit API Key</label>
+                <input type="text" id="apiKey" placeholder="Enter your LiveKit API Key" value="API2Fttjq223Ujw" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="apiSecret">LiveKit API Secret</label>
+                <input type="password" id="apiSecret" placeholder="Enter your LiveKit API Secret" value="6OQuBEhfG6GkKYYHD4i3fBZPwg15COdZReEs6HYsLwHA" required>
+                <div class="info" style="margin-top: 10px;">
+                    Your API credentials are used only to generate tokens locally in your browser. They are never sent to any server.
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label for="roomName">Room Name</label>
+                <input type="text" id="roomName" placeholder="Enter room name" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="participantName">Your Name</label>
+                <input type="text" id="participantName" placeholder="Enter your name" value="User">
+            </div>
+
+            <div id="autoConnectNotice" class="info hidden" style="margin-top: 10px;">
+                <strong>Auto Connect Enabled:</strong> You'll be connected to the default room as soon as you login.
+            </div>
+            
+            <div class="button-group">
+                <button class="btn-primary" id="connectBtn" onclick="connectToRoom()">Connect</button>
+            </div>
+        </div>
+
+        <div id="connectedView" class="hidden">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; padding: 12px; background: #f8f9fa; border-radius: 8px;">
+                <div>
+                    <strong>Room:</strong> <span id="connectedRoomDisplay" style="font-weight: 600; color: #667eea;"></span>
+                </div>
+                <button class="btn-secondary" onclick="handleLogout()" style="padding: 6px 12px; font-size: 12px;">Logout</button>
+            </div>
+            <div id="status" class="status connecting">Connecting...</div>
+            <div id="listenerModeInfo" class="info" style="display: none; margin-top: 15px;">
+                <strong>👂 Listener Mode:</strong> You are connected as a listener. You can hear other participants but cannot speak.
+            </div>
+            
+            <div class="audio-meters" id="audioMetersContainer">
+                <div class="meter-section" id="micMeterSection">
+                    <div class="meter-title">
+                        <span class="status-indicator" id="micStatusIndicator"></span>
+                        <span>Your Microphone</span>
+                    </div>
+                    <div class="meter-bar-container">
+                        <div class="meter-bar" id="micMeterBar" style="width: 0%"></div>
+                    </div>
+                    <div class="meter-value" id="micMeterValue">-∞ dB</div>
+                </div>
+            </div>
+
+            <div class="participants" id="participantsContainer">
+                <h3 style="margin-bottom: 15px; color: #333;">Remote Participants</h3>
+                <div id="participantsList">
+                    <div style="color: #999; font-style: italic;">No other participants yet...</div>
+                </div>
+            </div>
+
+            <div class="controls">
+                <button class="btn-toggle btn-secondary" id="muteBtn" onclick="toggleMute()" style="display: none;">
+                    🔊 Unmuted
+                </button>
+                <button class="btn-danger" id="disconnectBtn" onclick="disconnect()">Disconnect</button>
+            </div>
+        </div>
+
+        <div id="errorContainer"></div>
+    </div>
+
+    <script>
+        // Show error message (defined first so it's always available)
+        function showError(message) {
+            const errorContainer = document.getElementById('errorContainer');
+            if (errorContainer) {
+                errorContainer.innerHTML = `<div class="error">${message}</div>`;
+                setTimeout(() => {
+                    errorContainer.innerHTML = '';
+                }, 5000);
+            } else {
+                console.error(message);
+                alert(message);
+            }
+        }
+
+        // Static user credentials
+        const users = {
+            'admin': { password: 'admin123', role: 'admin', name: 'Administrator' },
+            'user': { password: 'user123', role: 'user', name: 'User' },
+            'user1': { password: 'user123', role: 'user', name: 'User 1' },
+            'user2': { password: 'user123', role: 'user', name: 'User 2' }
+        };
+
+        // Auto-connect configuration
+        const DEFAULT_ROOM_NAME = 'agents-playground';
+        const AUTO_CONNECT_ROLES = ['admin'];
+        const LOCK_ROOM_FOR_AUTO = true;
+
+        // Current user session
+        let currentUser = null;
+        let userRole = null;
+        let autoConnectTimer = null;
+
+        // Handle login
+        function handleLogin() {
+            const username = document.getElementById('username').value.trim();
+            const password = document.getElementById('password').value.trim();
+
+            if (!username || !password) {
+                showError('Please enter both username and password');
+                return;
+            }
+
+            const user = users[username];
+            if (!user || user.password !== password) {
+                showError('Invalid username or password');
+                return;
+            }
+
+            // Set current user
+            currentUser = username;
+            userRole = user.role;
+
+            // Hide login form, show connection form
+            document.getElementById('loginForm').classList.add('hidden');
+            document.getElementById('connectionForm').classList.remove('hidden');
+
+            // Update user display
+            document.getElementById('currentUserDisplay').textContent = user.name;
+            const roleBadge = document.getElementById('userRoleBadge');
+            roleBadge.textContent = userRole.toUpperCase();
+            if (userRole === 'admin') {
+                roleBadge.style.background = '#667eea';
+                roleBadge.style.color = 'white';
+            } else {
+                roleBadge.style.background = '#95a5a6';
+                roleBadge.style.color = 'white';
+            }
+
+            // Set participant name
+            document.getElementById('participantName').value = user.name;
+
+            applyRoomDefaults();
+            setupRoomDisplayListener();
+            updateAutoConnectNotice();
+            maybeAutoConnectAfterLogin();
+        }
+
+        // Handle logout
+        function handleLogout() {
+            // Disconnect if connected
+            if (typeof disconnect === 'function') {
+                disconnect();
+            }
+
+            if (autoConnectTimer) {
+                clearTimeout(autoConnectTimer);
+                autoConnectTimer = null;
+            }
+
+            // Clear session
+            currentUser = null;
+            userRole = null;
+
+            // Show login form, hide connection form
+            document.getElementById('loginForm').classList.remove('hidden');
+            document.getElementById('connectionForm').classList.add('hidden');
+            document.getElementById('connectedView').classList.add('hidden');
+            document.getElementById('autoConnectNotice').classList.add('hidden');
+
+            // Clear form fields
+            document.getElementById('username').value = '';
+            document.getElementById('password').value = '';
+            const roomInput = document.getElementById('roomName');
+            roomInput.value = '';
+            roomInput.removeAttribute('readonly');
+            updateRoomDisplay('');
+        }
+
+        // Expose login/logout functions to global scope
+        window.handleLogin = handleLogin;
+        window.handleLogout = handleLogout;
+
+        function updateRoomDisplay(roomName) {
+            const display = document.getElementById('roomDisplay');
+            if (!display) return;
+            if (roomName) {
+                display.textContent = `Room: ${roomName}`;
+            } else {
+                display.textContent = '';
+            }
+        }
+
+        function applyRoomDefaults() {
+            const roomInput = document.getElementById('roomName');
+            if (!roomInput) return;
+
+            if (DEFAULT_ROOM_NAME) {
+                roomInput.value = DEFAULT_ROOM_NAME;
+                if (LOCK_ROOM_FOR_AUTO && AUTO_CONNECT_ROLES.includes(userRole)) {
+                    roomInput.setAttribute('readonly', 'readonly');
+                } else {
+                    roomInput.removeAttribute('readonly');
+                }
+                updateRoomDisplay(DEFAULT_ROOM_NAME);
+            } else {
+                roomInput.removeAttribute('readonly');
+                updateRoomDisplay(roomInput.value || '');
+            }
+        }
+
+        function setupRoomDisplayListener() {
+            const roomInput = document.getElementById('roomName');
+            if (!roomInput || roomInput.dataset.listenerBound === '1') return;
+            roomInput.addEventListener('input', (event) => {
+                updateRoomDisplay(event.target.value.trim());
+            });
+            roomInput.dataset.listenerBound = '1';
+        }
+
+        function updateAutoConnectNotice() {
+            const notice = document.getElementById('autoConnectNotice');
+            if (!notice) return;
+            if (AUTO_CONNECT_ROLES.includes(userRole) && DEFAULT_ROOM_NAME) {
+                notice.innerHTML = `
+                    <strong>Auto Connect Enabled:</strong>
+                    You'll be connected to <code>${DEFAULT_ROOM_NAME}</code> automatically after login.`;
+                notice.classList.remove('hidden');
+            } else {
+                notice.classList.add('hidden');
+            }
+        }
+
+        function maybeAutoConnectAfterLogin() {
+            if (!AUTO_CONNECT_ROLES.includes(userRole)) return;
+            if (autoConnectTimer) {
+                clearTimeout(autoConnectTimer);
+            }
+            autoConnectTimer = setTimeout(() => {
+                // Ensure user is still on connection form
+                if (!currentUser || document.getElementById('connectionForm').classList.contains('hidden')) {
+                    return;
+                }
+                connectToRoom();
+            }, 600);
+        }
+
+        // Wait for LiveKit library to load
+        function initApp() {
+            // Check which global name LiveKit uses - try multiple possibilities
+            // LiveKit UMD build typically exposes as window.LiveKit
+            let LiveKit = null;
+            
+            // Try all possible global names (including case variations)
+            const possibleNames = ['LiveKit', 'LiveKitClient', 'LivekitClient', 'livekit', 'livekit-client'];
+            for (const name of possibleNames) {
+                if (window[name]) {
+                    LiveKit = window[name];
+                    console.log(`Found LiveKit as window.${name}`);
+                    break;
+                }
+            }
+            
+            // Also do a case-insensitive search as fallback
+            if (!LiveKit) {
+                const windowKeys = Object.keys(window);
+                const livekitKey = windowKeys.find(k => k.toLowerCase() === 'livekitclient' || k.toLowerCase() === 'livekit');
+                if (livekitKey) {
+                    LiveKit = window[livekitKey];
+                    console.log(`Found LiveKit as window.${livekitKey} (case-insensitive match)`);
+                }
+            }
+            
+            // Also check if it's nested
+            if (!LiveKit && window.livekit && window.livekit.client) {
+                LiveKit = window.livekit.client;
+                console.log('Found LiveKit as window.livekit.client');
+            }
+            
+            // If still not found, wait a bit more and try again
+            if (!LiveKit) {
+                console.log('LiveKit not found yet, checking window object:', Object.keys(window).filter(k => k.toLowerCase().includes('livekit')));
+                let retries = 0;
+                const checkInterval = setInterval(() => {
+                    retries++;
+                    // Try all names again
+                    for (const name of possibleNames) {
+                        if (window[name]) {
+                            LiveKit = window[name];
+                            console.log(`Found LiveKit as window.${name} after ${retries} retries`);
+                            clearInterval(checkInterval);
+                            initializeApp(LiveKit);
+                            return;
+                        }
+                    }
+                    
+                    // Also try case-insensitive search in retry
+                    if (!LiveKit) {
+                        const windowKeys = Object.keys(window);
+                        const livekitKey = windowKeys.find(k => k.toLowerCase() === 'livekitclient' || k.toLowerCase() === 'livekit');
+                        if (livekitKey) {
+                            LiveKit = window[livekitKey];
+                            console.log(`Found LiveKit as window.${livekitKey} after ${retries} retries (case-insensitive match)`);
+                            clearInterval(checkInterval);
+                            initializeApp(LiveKit);
+                            return;
+                        }
+                    }
+                    
+                    if (retries >= 10) {
+                        clearInterval(checkInterval);
+                        console.error('LiveKit library not loaded after 5 seconds. Available globals:', Object.keys(window).filter(k => k.toLowerCase().includes('live') || k.toLowerCase().includes('kit')));
+                        showError('LiveKit library failed to load. Please check your internet connection and refresh the page. If the problem persists, try using a different browser.');
+                    }
+                }, 500);
+                return;
+            }
+            
+            initializeApp(LiveKit);
+        }
+        
+        function initializeApp(LiveKit) {
+            // Make it available globally
+            window.LiveKitClient = LiveKit;
+            
+            const { Room, RoomEvent, RemoteParticipant, RemoteTrackPublication, RemoteAudioTrack, Track, createLocalAudioTrack } = LiveKit;
+        
+        let room = null;
+        let localAudioTrack = null;
+        let isMuted = false;
+        let audioContext = null;
+        let analyser = null;
+        let micMeterInterval = null;
+        let participants = new Map();
+
+        // Calculate dB level from audio data
+        function calculateDBLevel(audioData) {
+            let sum = 0;
+            for (let i = 0; i < audioData.length; i++) {
+                sum += audioData[i] * audioData[i];
+            }
+            const rms = Math.sqrt(sum / audioData.length);
+            const db = 20 * Math.log10(rms + 1e-6);
+            return db;
+        }
+
+        // Update microphone meter
+        function updateMicMeter() {
+            if (!analyser || isMuted) {
+                document.getElementById('micMeterBar').style.width = '0%';
+                document.getElementById('micMeterValue').textContent = isMuted ? 'MUTED' : '-∞ dB';
+                return;
+            }
+
+            const dataArray = new Uint8Array(analyser.frequencyBinCount);
+            analyser.getByteFrequencyData(dataArray);
+            
+            // Calculate average level
+            let sum = 0;
+            for (let i = 0; i < dataArray.length; i++) {
+                sum += dataArray[i];
+            }
+            const average = sum / dataArray.length;
+            const percentage = Math.min(100, (average / 255) * 100);
+            
+            // Estimate dB (approximate conversion)
+            const db = (average / 255) * 60 - 60; // Rough approximation
+            
+            document.getElementById('micMeterBar').style.width = percentage + '%';
+            document.getElementById('micMeterValue').textContent = db.toFixed(1) + ' dB';
+        }
+
+        // Generate LiveKit access token client-side
+        function generateToken(apiKey, apiSecret, roomName, identity, name) {
+            try {
+                // Check if jsrsasign library is loaded
+                if (typeof KJUR === 'undefined' || !KJUR.jws || !KJUR.jws.JWS) {
+                    throw new Error('jsrsasign library (KJUR) is not loaded. Please refresh the page and wait for all libraries to load.');
+                }
+                
+                const now = Math.floor(Date.now() / 1000);
+                const exp = now + 6 * 60 * 60; // 6 hours expiration
+                
+                const header = {
+                    alg: 'HS256',
+                    typ: 'JWT'
+                };
+                
+                // Set canPublish based on user role (only admin can publish)
+                const canPublish = userRole === 'admin';
+                
+                const payload = {
+                    iss: apiKey,
+                    sub: identity,
+                    iat: now,
+                    exp: exp,
+                    video: {
+                        room: roomName,
+                        roomJoin: true,
+                        canPublish: canPublish,
+                        canSubscribe: true
+                    },
+                    name: name
+                };
+                
+                // Use jsrsasign library to sign the token
+                const headerStr = JSON.stringify(header);
+                const payloadStr = JSON.stringify(payload);
+                
+                // Sign JWT using jsrsasign
+                const jwt = KJUR.jws.JWS.sign('HS256', headerStr, payloadStr, apiSecret);
+                
+                return jwt;
+            } catch (error) {
+                throw new Error(`Token generation failed: ${error.message}`);
+            }
+        }
+
+        // Connect to LiveKit room
+        async function connectToRoom() {
+            const livekitUrl = document.getElementById('livekitUrl').value.trim();
+            const apiKey = document.getElementById('apiKey').value.trim();
+            const apiSecret = document.getElementById('apiSecret').value.trim();
+            const roomName = document.getElementById('roomName').value.trim();
+            const participantName = document.getElementById('participantName').value.trim() || 'User';
+
+            if (!roomName) {
+                showError('Room name is required');
+                return;
+            }
+
+            if (!livekitUrl) {
+                showError('LiveKit Server URL is required');
+                return;
+            }
+
+            if (!apiKey || !apiSecret) {
+                showError('API Key and Secret are required');
+                return;
+            }
+
+            // Check if user is logged in
+            if (!currentUser || !userRole) {
+                showError('Please login first');
+                return;
+            }
+
+            // Check if jsrsasign library is loaded
+            if (typeof KJUR === 'undefined' || !KJUR.jws || !KJUR.jws.JWS) {
+                showError('jsrsasign library is not loaded yet. Please wait a moment and try again, or refresh the page.');
+                return;
+            }
+
+            try {
+                // Show connected view
+                document.getElementById('connectionForm').classList.add('hidden');
+                document.getElementById('connectedView').classList.remove('hidden');
+                document.getElementById('status').className = 'status connecting';
+                document.getElementById('status').textContent = 'Generating token...';
+                
+                // Update connected room display
+                const connectedRoomDisplay = document.getElementById('connectedRoomDisplay');
+                if (connectedRoomDisplay) {
+                    connectedRoomDisplay.textContent = roomName;
+                }
+
+                // Hide microphone section for regular users and show listener mode info
+                if (userRole !== 'admin') {
+                    document.getElementById('micMeterSection').style.display = 'none';
+                    document.getElementById('muteBtn').style.display = 'none';
+                    document.getElementById('listenerModeInfo').style.display = 'block';
+                } else {
+                    document.getElementById('micMeterSection').style.display = 'block';
+                    document.getElementById('muteBtn').style.display = 'block';
+                    document.getElementById('listenerModeInfo').style.display = 'none';
+                }
+
+                // Generate token
+                const identity = `user-${Date.now()}`;
+                const token = generateToken(apiKey, apiSecret, roomName, identity, participantName);
+                
+                document.getElementById('status').textContent = 'Connecting...';
+
+                // Create room
+                room = new Room();
+
+                // Set up event handlers
+                room.on(RoomEvent.Connected, () => {
+                    document.getElementById('status').className = 'status connected';
+                    document.getElementById('status').textContent = `Connected to room: ${roomName}`;
+                    console.log('Connected to room');
+                });
+
+                room.on(RoomEvent.Disconnected, (reason) => {
+                    document.getElementById('status').className = 'status disconnected';
+                    document.getElementById('status').textContent = `Disconnected: ${reason}`;
+                    console.log('Disconnected:', reason);
+                    cleanup();
+                });
+
+                room.on(RoomEvent.ParticipantConnected, (participant) => {
+                    console.log('Participant connected:', participant.identity);
+                    addParticipant(participant);
+                });
+
+                room.on(RoomEvent.ParticipantDisconnected, (participant) => {
+                    console.log('Participant disconnected:', participant.identity);
+                    removeParticipant(participant);
+                });
+
+                room.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
+                    if (track.kind === Track.Kind.Audio) {
+                        console.log('Audio track subscribed from:', participant.identity);
+                        handleRemoteAudioTrack(track, participant);
+                    }
+                });
+
+                // Connect to room
+                await room.connect(livekitUrl, token);
+                console.log('Connected to LiveKit room');
+
+                // Only create and publish audio track if user is admin
+                if (userRole === 'admin') {
+                    // Create and publish audio track using constraints directly
+                    // This avoids MediaStream cloning issues
+                    const audioConstraints = {
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        autoGainControl: true
+                    };
+                    localAudioTrack = await createLocalAudioTrack(audioConstraints);
+
+                    // Get the MediaStream from the track for audio meter
+                    // The track should have a mediaStream property, or we can create one from the MediaStreamTrack
+                    let stream;
+                    if (localAudioTrack.mediaStream) {
+                        stream = localAudioTrack.mediaStream;
+                    } else if (localAudioTrack.mediaStreamTrack) {
+                        // Create a MediaStream from the MediaStreamTrack if needed
+                        stream = new MediaStream([localAudioTrack.mediaStreamTrack]);
+                    } else {
+                        // Fallback: get the underlying track and create a stream
+                        const track = localAudioTrack.getMediaStreamTrack ? localAudioTrack.getMediaStreamTrack() : null;
+                        if (track) {
+                            stream = new MediaStream([track]);
+                        } else {
+                            throw new Error('Unable to get MediaStream from audio track for meter');
+                        }
+                    }
+                    
+                    // Create audio context for meter
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    const source = audioContext.createMediaStreamSource(stream);
+                    analyser = audioContext.createAnalyser();
+                    analyser.fftSize = 256;
+                    source.connect(analyser);
+
+                    // Start meter updates
+                    micMeterInterval = setInterval(updateMicMeter, 100);
+
+                    // Publish the track
+                    await room.localParticipant.publishTrack(localAudioTrack, {
+                        source: Track.Source.SourceMicrophone
+                    });
+
+                    console.log('Published audio track');
+                    updateMuteButton();
+                } else {
+                    // Regular users only listen (subscribe to audio)
+                    console.log('Connected as listener (user role)');
+                    document.getElementById('status').textContent = `Connected as listener to room: ${roomName}`;
+                }
+
+            } catch (error) {
+                console.error('Connection error:', error);
+                showError(`Connection failed: ${error.message}`);
+                cleanup();
+            }
+        }
+
+        // Handle remote audio track
+        function handleRemoteAudioTrack(track, participant) {
+            const audioElement = track.attach();
+            audioElement.autoplay = true;
+            audioElement.volume = 1.0;
+            document.body.appendChild(audioElement);
+
+            // Create analyser for remote audio
+            const remoteAudioContext = new (window.AudioContext || window.webkitAudioContext)();
+            const remoteSource = remoteAudioContext.createMediaStreamSource(track.mediaStream);
+            const remoteAnalyser = remoteAudioContext.createAnalyser();
+            remoteAnalyser.fftSize = 256;
+            remoteSource.connect(remoteAnalyser);
+
+            // Store participant info
+            participants.set(participant.sid, {
+                participant: participant,
+                track: track,
+                audioElement: audioElement,
+                analyser: remoteAnalyser,
+                audioContext: remoteAudioContext
+            });
+
+            updateParticipantsList();
+        }
+
+        // Add participant to UI
+        function addParticipant(participant) {
+            if (participant.isLocal) return;
+            updateParticipantsList();
+        }
+
+        // Remove participant from UI
+        function removeParticipant(participant) {
+            const participantInfo = participants.get(participant.sid);
+            if (participantInfo) {
+                if (participantInfo.audioElement) {
+                    participantInfo.audioElement.remove();
+                }
+                if (participantInfo.audioContext) {
+                    participantInfo.audioContext.close();
+                }
+                participants.delete(participant.sid);
+            }
+            updateParticipantsList();
+        }
+
+        // Update participants list in UI
+        function updateParticipantsList() {
+            const container = document.getElementById('participantsList');
+            const remoteParticipants = Array.from(participants.values())
+                .map(p => p.participant)
+                .filter(p => !p.isLocal);
+
+            if (remoteParticipants.length === 0) {
+                container.innerHTML = '<div style="color: #999; font-style: italic;">No other participants yet...</div>';
+                return;
+            }
+
+            container.innerHTML = remoteParticipants.map(participant => {
+                const participantInfo = participants.get(participant.sid);
+                return `
+                    <div class="participant-item">
+                        <div class="participant-name">${participant.identity || participant.name || 'Unknown'}</div>
+                        <div class="meter-section">
+                            <div class="meter-bar-container">
+                                <div class="meter-bar" id="participant-meter-${participant.sid}" style="width: 0%"></div>
+                            </div>
+                            <div class="meter-value" id="participant-value-${participant.sid}">-∞ dB</div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            // Start updating participant meters
+            updateParticipantMeters();
+        }
+
+        // Update participant audio meters
+        function updateParticipantMeters() {
+            participants.forEach((info, sid) => {
+                if (!info.analyser) return;
+
+                const dataArray = new Uint8Array(info.analyser.frequencyBinCount);
+                info.analyser.getByteFrequencyData(dataArray);
+                
+                let sum = 0;
+                for (let i = 0; i < dataArray.length; i++) {
+                    sum += dataArray[i];
+                }
+                const average = sum / dataArray.length;
+                const percentage = Math.min(100, (average / 255) * 100);
+                const db = (average / 255) * 60 - 60;
+
+                const meterBar = document.getElementById(`participant-meter-${sid}`);
+                const meterValue = document.getElementById(`participant-value-${sid}`);
+                
+                if (meterBar) {
+                    meterBar.style.width = percentage + '%';
+                }
+                if (meterValue) {
+                    meterValue.textContent = db.toFixed(1) + ' dB';
+                }
+            });
+        }
+
+        // Start participant meter updates
+        let participantMeterInterval = null;
+        function startParticipantMeters() {
+            if (participantMeterInterval) return;
+            participantMeterInterval = setInterval(updateParticipantMeters, 100);
+        }
+
+        // Toggle mute
+        function toggleMute() {
+            if (!localAudioTrack) return;
+
+            isMuted = !isMuted;
+            localAudioTrack.setMuted(isMuted);
+            updateMuteButton();
+        }
+
+        // Update mute button UI
+        function updateMuteButton() {
+            const btn = document.getElementById('muteBtn');
+            const indicator = document.getElementById('micStatusIndicator');
+            
+            if (isMuted) {
+                btn.textContent = '🔇 Muted';
+                btn.classList.add('muted');
+                indicator.classList.remove('live');
+                indicator.classList.add('muted');
+            } else {
+                btn.textContent = '🔊 Unmuted';
+                btn.classList.remove('muted');
+                indicator.classList.add('live');
+                indicator.classList.remove('muted');
+            }
+        }
+
+        // Disconnect from room
+        async function disconnect() {
+            if (room) {
+                await room.disconnect();
+            }
+            cleanup();
+            document.getElementById('connectionForm').classList.remove('hidden');
+            document.getElementById('connectedView').classList.add('hidden');
+        }
+
+        // Cleanup resources
+        function cleanup() {
+            if (micMeterInterval) {
+                clearInterval(micMeterInterval);
+                micMeterInterval = null;
+            }
+
+            if (participantMeterInterval) {
+                clearInterval(participantMeterInterval);
+                participantMeterInterval = null;
+            }
+
+            if (localAudioTrack) {
+                localAudioTrack.stop();
+                localAudioTrack = null;
+            }
+
+            participants.forEach((info) => {
+                if (info.audioElement) {
+                    info.audioElement.remove();
+                }
+                if (info.audioContext) {
+                    info.audioContext.close();
+                }
+            });
+            participants.clear();
+
+            if (audioContext) {
+                audioContext.close();
+                audioContext = null;
+            }
+
+            analyser = null;
+        }
+
+        // Start participant meters when participants are added
+        const originalUpdateParticipantsList = updateParticipantsList;
+        updateParticipantsList = function() {
+            originalUpdateParticipantsList();
+            if (participants.size > 0) {
+                startParticipantMeters();
+            }
+        };
+        
+        // Expose functions to global scope for onclick handlers
+        window.connectToRoom = connectToRoom;
+        window.toggleMute = toggleMute;
+        window.disconnect = disconnect;
+        } // End of initializeApp function
+        
+        // Initialize app when page loads (but LiveKit loading is handled by script tag above)
+        // The script tag will call initApp when LiveKit is loaded
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', function() {
+                // Give it a moment for scripts to load
+                setTimeout(initApp, 500);
+            });
+        } else {
+            // DOM already loaded, but wait a bit for scripts to load
+            setTimeout(initApp, 500);
+        }
+    </script>
+</body>
+</html>
